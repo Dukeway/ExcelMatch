@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadedFile, MatchConfig, SheetData } from '../types';
+import { UploadedFile, MatchConfig } from '../types';
 import { suggestMatchColumns } from '../services/geminiService';
 
 interface StepConfigProps {
@@ -9,11 +9,11 @@ interface StepConfigProps {
 }
 
 export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }) => {
-  // Config State
+  // Initialize with safe defaults
   const [leftFileId, setLeftFileId] = useState<string>(files[0]?.id || "");
   const [leftSheetName, setLeftSheetName] = useState<string>("");
   
-  // Default right file to the second file if available, otherwise the first file
+  // If we have 2 files, default right to the 2nd one. If only 1, default right to the 1st one.
   const [rightFileId, setRightFileId] = useState<string>(
     files.length > 1 ? files[1].id : (files[0]?.id || "")
   );
@@ -27,7 +27,7 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReasoning, setAiReasoning] = useState<string | null>(null);
 
-  // Derived state helpers
+  // Helper to find objects securely
   const getFile = (id: string) => files.find(f => f.id === id);
   const getSheet = (fileId: string, sheetName: string) => {
     const file = getFile(fileId);
@@ -39,7 +39,7 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
   const leftSheet = getSheet(leftFileId, leftSheetName);
   const rightSheet = getSheet(rightFileId, rightSheetName);
 
-  // Set default sheets when files change
+  // Auto-select first sheet if not selected
   useEffect(() => {
     if (leftFile && !leftSheetName && leftFile.sheets.length > 0) {
       setLeftSheetName(leftFile.sheets[0].name);
@@ -48,19 +48,16 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
 
   useEffect(() => {
     if (rightFile && !rightSheetName && rightFile.sheets.length > 0) {
-      // If we are looking at the same file for both left and right, 
-      // and it has multiple sheets, try to select the second sheet for the right side by default
-      if (leftFileId === rightFileId && leftFile && leftFile.sheets.length > 1) {
-         // This logic runs when rightFile changes. 
-         // If leftSheet is already selected (e.g. index 0), we might prefer index 1 for right.
-         // However, this effect runs independently. 
-         // Simple default: index 0. User can change it.
-         setRightSheetName(rightFile.sheets[0].name);
+      // Smart default: if matching within same file, try to pick the 2nd sheet for right side
+      if (leftFileId === rightFileId && rightFile.sheets.length > 1) {
+        // Find a sheet that isn't the left one, just for convenience
+        const otherSheet = rightFile.sheets.find(s => s.name !== leftSheetName);
+        setRightSheetName(otherSheet ? otherSheet.name : rightFile.sheets[0].name);
       } else {
-         setRightSheetName(rightFile.sheets[0].name);
+        setRightSheetName(rightFile.sheets[0].name);
       }
     }
-  }, [rightFile, rightSheetName, leftFileId, rightFileId]);
+  }, [rightFile, rightSheetName, leftFileId, rightFileId, leftSheetName]);
 
   const handleAiSuggest = async () => {
     if (!leftSheet || !rightSheet) return;
@@ -83,23 +80,25 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
   };
 
   const toggleColumnSelect = (col: string) => {
-    if (selectedColumns.includes(col)) {
-      setSelectedColumns(selectedColumns.filter(c => c !== col));
-    } else {
-      setSelectedColumns([...selectedColumns, col]);
-    }
+    setSelectedColumns(prev => 
+      prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]
+    );
   };
 
-  const canProceed = leftSheet && rightSheet && leftKey && rightKey && selectedColumns.length > 0;
+  // Validation
+  const isValid = !!(leftSheet && rightSheet && leftKey && rightKey && selectedColumns.length > 0);
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6 pb-20">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-slate-800">Configure Matching Logic</h2>
+    <div className="max-w-6xl mx-auto p-4 animate-in pb-24">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Configure Matching</h2>
+          <p className="text-slate-500 text-sm">Define how your datasets should be joined.</p>
+        </div>
         <button 
           onClick={handleAiSuggest}
           disabled={aiLoading || !leftSheet || !rightSheet}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
+          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50 shadow-sm"
         >
           {aiLoading ? <i className="fas fa-spinner fa-spin"></i> : <i className="fas fa-wand-magic-sparkles"></i>}
           AI Auto-Detect Keys
@@ -107,31 +106,30 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
       </div>
 
       {aiReasoning && (
-        <div className="mb-6 bg-purple-50 border border-purple-200 p-4 rounded-lg flex items-start gap-3 animate-fade-in">
-          <i className="fas fa-robot text-purple-600 mt-1"></i>
+        <div className="mb-6 bg-purple-50 border border-purple-100 p-4 rounded-xl flex items-start gap-3">
+          <i className="fas fa-lightbulb text-purple-600 mt-1"></i>
           <div>
             <h4 className="font-semibold text-purple-900 text-sm">AI Suggestion</h4>
-            <p className="text-purple-800 text-sm">{aiReasoning}</p>
+            <p className="text-purple-800 text-sm leading-relaxed">{aiReasoning}</p>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* LEFT CONFIG */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">MASTER</span>
-            <h3 className="font-semibold text-lg text-slate-800">Master Data (Left)</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Master File Config */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-sm">1</div>
+            <h3 className="font-semibold text-lg text-slate-800">Master Data (Base)</h3>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Select File</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">File Source</label>
               <select 
                 value={leftFileId} 
                 onChange={e => setLeftFileId(e.target.value)}
-                className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
               >
                 {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
@@ -139,11 +137,11 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
 
             {leftFile && (
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Select Sheet</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sheet</label>
                 <select 
                   value={leftSheetName} 
                   onChange={e => setLeftSheetName(e.target.value)}
-                  className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
                 >
                   {leftFile.sheets.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                 </select>
@@ -152,35 +150,34 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
 
             {leftSheet && (
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Unique Identifier (Key)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Lookup Key Column</label>
                 <select 
                   value={leftKey} 
                   onChange={e => setLeftKey(e.target.value)}
-                  className="w-full p-2 border-2 border-blue-100 bg-blue-50 rounded focus:ring-2 focus:ring-blue-500 outline-none font-medium text-blue-900"
+                  className="w-full p-2.5 bg-blue-50 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-blue-900"
                 >
-                  <option value="">-- Select Key Column --</option>
+                  <option value="">-- Select Unique ID --</option>
                   {leftSheet.headers.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
-                <p className="text-xs text-slate-400 mt-1">Common column to match against (e.g. Email, ID)</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* RIGHT CONFIG */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold">LOOKUP</span>
-            <h3 className="font-semibold text-lg text-slate-800">Lookup Data (Right)</h3>
+        {/* Lookup File Config */}
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-sm">2</div>
+            <h3 className="font-semibold text-lg text-slate-800">Lookup Data (Source)</h3>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Select File</label>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">File Source</label>
               <select 
                 value={rightFileId} 
                 onChange={e => setRightFileId(e.target.value)}
-                className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-orange-500 outline-none"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm"
               >
                 {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
@@ -188,11 +185,11 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
 
             {rightFile && (
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Select Sheet</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sheet</label>
                 <select 
                   value={rightSheetName} 
                   onChange={e => setRightSheetName(e.target.value)}
-                  className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-orange-500 outline-none"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm"
                 >
                   {rightFile.sheets.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                 </select>
@@ -201,13 +198,13 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
 
             {rightSheet && (
               <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">Unique Identifier (Key)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Lookup Key Column</label>
                 <select 
                   value={rightKey} 
                   onChange={e => setRightKey(e.target.value)}
-                  className="w-full p-2 border-2 border-orange-100 bg-orange-50 rounded focus:ring-2 focus:ring-orange-500 outline-none font-medium text-orange-900"
+                  className="w-full p-2.5 bg-orange-50 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-sm font-medium text-orange-900"
                 >
-                  <option value="">-- Select Key Column --</option>
+                  <option value="">-- Select Unique ID --</option>
                   {rightSheet.headers.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
               </div>
@@ -216,75 +213,86 @@ export const StepConfig: React.FC<StepConfigProps> = ({ files, onBack, onMatch }
         </div>
       </div>
 
-      {/* COLUMN SELECTION & OPTIONS */}
-      <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h3 className="font-semibold text-lg text-slate-800 mb-4">Select Columns to Append</h3>
+      {/* Output Configuration */}
+      <div className="mt-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <i className="fas fa-columns text-slate-400"></i> Select Columns to Append
+        </h3>
         
         {!rightSheet ? (
-          <p className="text-slate-400 italic">Please select a Lookup Sheet first.</p>
+          <div className="text-center py-8 text-slate-400 italic bg-slate-50 rounded-lg border border-dashed border-slate-200">
+            Select a Lookup Sheet above to see available columns.
+          </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-60 overflow-y-auto custom-scrollbar p-1">
             {rightSheet.headers.map(h => (
               <label 
                 key={h} 
-                className={`flex items-center p-3 rounded border cursor-pointer transition-all ${
+                className={`flex items-center p-3 rounded-lg border cursor-pointer transition-all ${
                   selectedColumns.includes(h) 
-                    ? 'border-green-500 bg-green-50 text-green-800' 
-                    : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                    ? 'border-green-500 bg-green-50 text-green-800 shadow-sm' 
+                    : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                 }`}
               >
+                <div className={`w-4 h-4 rounded border flex items-center justify-center mr-3 transition-colors ${
+                  selectedColumns.includes(h) ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300'
+                }`}>
+                  {selectedColumns.includes(h) && <i className="fas fa-check text-white text-xs"></i>}
+                </div>
+                <span className="truncate text-sm font-medium" title={h}>{h}</span>
                 <input 
                   type="checkbox" 
+                  className="hidden"
                   checked={selectedColumns.includes(h)}
                   onChange={() => toggleColumnSelect(h)}
-                  className="mr-2 accent-green-600"
                 />
-                <span className="truncate text-sm" title={h}>{h}</span>
               </label>
             ))}
           </div>
         )}
         
         <div className="mt-6 pt-6 border-t border-slate-100">
-          <label className="flex items-center cursor-pointer">
+          <label className="flex items-center cursor-pointer group">
             <div className="relative">
               <input type="checkbox" className="sr-only" checked={fuzzy} onChange={e => setFuzzy(e.target.checked)} />
-              <div className={`block w-10 h-6 rounded-full ${fuzzy ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
-              <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${fuzzy ? 'transform translate-x-4' : ''}`}></div>
+              <div className={`block w-10 h-6 rounded-full transition-colors ${fuzzy ? 'bg-blue-600' : 'bg-slate-300'}`}></div>
+              <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${fuzzy ? 'transform translate-x-4' : ''}`}></div>
             </div>
-            <div className="ml-3 text-slate-700 font-medium text-sm">
-              Enable Fuzzy/Clean Matching 
-              <span className="text-slate-400 font-normal ml-1">(Ignores case & extra spaces - Recommended)</span>
+            <div className="ml-3">
+              <span className="text-slate-800 font-medium text-sm block">Smart Format Matching</span>
+              <span className="text-slate-500 text-xs block">Ignores capitalization, extra spaces, and treats text/numbers equally (e.g. "123" matches 123)</span>
             </div>
           </label>
         </div>
       </div>
 
-      {/* FOOTER ACTIONS */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-xl z-10 flex justify-between items-center max-w-6xl mx-auto md:relative md:bg-transparent md:border-none md:shadow-none md:p-0 md:mt-8">
-        <button 
-          onClick={onBack}
-          className="text-slate-500 hover:text-slate-800 font-medium px-4 py-2"
-        >
-          Back
-        </button>
-        <button 
-          disabled={!canProceed}
-          onClick={() => onMatch({
-            leftFileId, leftSheetName,
-            rightFileId, rightSheetName,
-            leftKey, rightKey,
-            selectedColumns,
-            fuzzy
-          })}
-          className={`px-8 py-3 rounded-lg font-semibold shadow-lg transition-all ${
-            !canProceed 
-              ? 'bg-slate-300 text-white cursor-not-allowed' 
-              : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-xl'
-          }`}
-        >
-          Run Match Logic <i className="fas fa-bolt ml-2"></i>
-        </button>
+      {/* Action Bar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-20">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <button 
+            onClick={onBack}
+            className="text-slate-500 hover:text-slate-800 font-medium px-4 py-2 flex items-center gap-2 transition-colors"
+          >
+            <i className="fas fa-arrow-left"></i> Back
+          </button>
+          <button 
+            disabled={!isValid}
+            onClick={() => onMatch({
+              leftFileId, leftSheetName,
+              rightFileId, rightSheetName,
+              leftKey, rightKey,
+              selectedColumns,
+              fuzzy
+            })}
+            className={`px-8 py-3 rounded-lg font-bold shadow-lg transition-all flex items-center gap-2 transform active:scale-95 ${
+              !isValid 
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none' 
+                : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-blue-200 hover:shadow-xl'
+            }`}
+          >
+            Start Matching Process <i className="fas fa-arrow-right"></i>
+          </button>
+        </div>
       </div>
     </div>
   );
