@@ -1,0 +1,5 @@
+{
+  "name": "ExcelMatch Pro",
+  "description": "An intelligent Excel data matching tool that visualizes data, handles formatting issues, and uses AI to suggest join keys.",
+  "requestFramePermissions": []
+}
